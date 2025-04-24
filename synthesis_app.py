@@ -13,7 +13,7 @@ plt.rcParams['font.sans-serif'] = ['Arial']
 plt.rcParams['axes.unicode_minus'] = False
 
 # Global settings
-DATA_PATH = "D:/CPE/data.xlsx"
+DATA_PATH = "data.xlsx"
 REQUIRED_COLS = {
     'p-aminophenol(g)': 'p-aminophenol (g)',
     'Acetic Anhydride(ml)': 'Acetic Anhydride (ml)',
@@ -28,33 +28,40 @@ st.set_page_config(page_title="Acetaminophen Synthesis Analysis System", layout=
 
 # ================ Helper Functions ================
 def load_data():
-    """Load or initialize data file"""
-    if not os.path.exists(DATA_PATH):
-        pd.DataFrame(columns=REQUIRED_COLS.keys()).to_excel(DATA_PATH, index=False)
-        return pd.DataFrame(columns=REQUIRED_COLS.keys())
-    
-    df = pd.read_excel(DATA_PATH)
-    
-    # Check for required columns
-    missing_cols = [col for col in REQUIRED_COLS.keys() if col not in df.columns]
-    if missing_cols:
-        st.error(f"Missing required columns in data file: {', '.join(missing_cols)}")
-        st.info("Attempting to fix data file...")
-        for col in missing_cols:
-            if col not in df.columns:
+    """加载或初始化数据文件（兼容云环境）"""
+    try:
+        # 确保目录存在（如果是路径包含目录）
+        os.makedirs(os.path.dirname(DATA_PATH), exist_ok=True)
+        
+        if not os.path.exists(DATA_PATH):
+            # 创建空DataFrame并保存
+            empty_df = pd.DataFrame(columns=REQUIRED_COLS.keys())
+            empty_df.to_excel(DATA_PATH, index=False)
+            return empty_df
+        
+        # 读取现有数据
+        df = pd.read_excel(DATA_PATH)
+        
+        # 检查并修复缺失列
+        missing_cols = [col for col in REQUIRED_COLS.keys() if col not in df.columns]
+        if missing_cols:
+            for col in missing_cols:
                 df[col] = np.nan
-        df.to_excel(DATA_PATH, index=False)
-    
-    # Calculate PA:AA if missing
-    if 'PA:AA' not in df.columns and all(col in df.columns for col in ['p-aminophenol(g)', 'Acetic Anhydride(ml)']):
-        df['PA:AA'] = df['p-aminophenol(g)'] / df['Acetic Anhydride(ml)']
-    
-    # Calculate Yield(%) if missing
-    if 'Yield(%)' not in df.columns and all(col in df.columns for col in ['Purify weight(g)', 'p-aminophenol(g)']):
-        molar_ratio = 151.16 / 109.13  # Molecular weight ratio
-        df['Yield(%)'] = (df['Purify weight(g)'] / (df['p-aminophenol(g)'] * molar_ratio)) * 100
-    
-    return df
+            df.to_excel(DATA_PATH, index=False)
+        
+        # 计算PA:AA和Yield(%)（如果不存在）
+        if 'PA:AA' not in df.columns and all(col in df.columns for col in ['p-aminophenol(g)', 'Acetic Anhydride(ml)']):
+            df['PA:AA'] = df['p-aminophenol(g)'] / df['Acetic Anhydride(ml)']
+        
+        if 'Yield(%)' not in df.columns and all(col in df.columns for col in ['Purify weight(g)', 'p-aminophenol(g)']):
+            molar_ratio = 151.16 / 109.13
+            df['Yield(%)'] = (df['Purify weight(g)'] / (df['p-aminophenol(g)'] * molar_ratio)) * 100
+        
+        return df
+        
+    except Exception as e:
+        st.error(f"数据加载失败: {str(e)}")
+        return pd.DataFrame(columns=REQUIRED_COLS.keys())
 
 def save_data(df):
     """Save data to Excel"""
