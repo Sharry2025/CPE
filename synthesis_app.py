@@ -96,7 +96,26 @@ def show_analysis():
 
 # ================ 数据管理模块 ================
 def data_management():
-    # ... [保持原有data_management()函数内容不变] ...
+    """数据管理功能"""
+    st.header("📊 数据管理")
+    df = load_data()
+    
+    # 显示当前数据
+    st.subheader("当前数据")
+    st.dataframe(df)
+    
+    # 数据编辑功能
+    st.subheader("编辑数据")
+    edited_df = st.data_editor(df, num_rows="dynamic")
+    if st.button("保存更改"):
+        if save_data(edited_df):
+            st.success("数据保存成功！")
+        else:
+            st.error("保存失败")
+    
+    # 数据下载
+    st.subheader("数据导出")
+    st.markdown(create_download_link(df), unsafe_allow_html=True)
 
 # ================ 产量预测模块 ================
 def weight_prediction():
