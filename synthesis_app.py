@@ -14,7 +14,7 @@ plt.rcParams['font.sans-serif'] = ['Arial']
 plt.rcParams['axes.unicode_minus'] = False
 
 # Global settings - GitHub Raw URL for data.xlsx
-DATA_URL = "https://raw.githubusercontent.com/{your_username}/CPE/main/data.xlsx"  # Replace with your actual GitHub URL
+DATA_URL = "https://raw.githubusercontent.com/{Sharry2025}/CPE/main/data.xlsx"  # Replace with your actual GitHub URL
 REQUIRED_COLS = {
     'p-aminophenol(g)': 'p-aminophenol (g)',
     'Acetic Anhydride(ml)': 'Acetic Anhydride (ml)',
