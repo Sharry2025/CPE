@@ -123,7 +123,7 @@ def show_analysis():
 # ================ Data Management Module ================
 def data_management():
     st.title("Acetaminophen Synthesis Data Management")
-    df = load_data()
+    df = load_fresh_data()
     
     # Instructions
     with st.expander("ℹ️ Instructions", expanded=True):
