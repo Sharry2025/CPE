@@ -237,63 +237,209 @@ def weight_prediction():
     st.title("Acetaminophen Synthesis Yield Prediction")
     df = load_fresh_data()
     
-    # 硬性数据要求
-    MIN_DATA_ROWS = 5
-    REQUIRED_PRED_COLS = ['p-aminophenol(g)', 'Acetic Anhydride(ml)', 'PA:AA',
+    # Data validation
+    if len(df) < 5:
+        st.warning("⚠️ At least 5 experiments required for prediction model")
+        st.info(f"Current data: {len(df)} experiments (minimum 5 recommended)")
+        return
+    
+    required_pred_cols = ['p-aminophenol(g)', 'Acetic Anhydride(ml)', 'PA:AA',
                          'Reaction time(min)', 'T(°C)', 'Crude weight(g)', 'Purify weight(g)', 'Yield(%)']
-    
-    if len(df) < MIN_DATA_ROWS:
-        st.error(f"至少需要 {MIN_DATA_ROWS} 条数据才能建模！当前数据量: {len(df)}")
-        st.markdown("[➡️ 前往数据管理页面录入数据](#data-management)")
-        return
-    
-    missing_cols = [col for col in REQUIRED_PRED_COLS if col not in df.columns]
+    missing_cols = [col for col in required_pred_cols if col not in df.columns]
     if missing_cols:
-        st.error(f"缺失必要列: {', '.join(missing_cols)}")
+        st.error(f"Missing columns in data file: {', '.join(missing_cols)}")
+        st.info("Please add complete data in Data Management")
         return
     
-    # 建模逻辑
+    # Get data ranges for validation
+    data_ranges = get_data_ranges(df)
+    if not data_ranges:
+        st.error("Cannot determine data ranges from existing data")
+        return
+    
+    # Check if all required ranges are available
+    required_ranges = ['p-aminophenol(g)', 'Acetic Anhydride(ml)', 'PA:AA', 'Reaction time(min)', 'T(°C)']
+    missing_ranges = [col for col in required_ranges if col not in data_ranges]
+    if missing_ranges:
+        st.error(f"Cannot determine ranges for: {', '.join(missing_ranges)}")
+        st.info("Please add data with these parameters in Data Management")
+        return
+    
+    # Model training
     try:
-        # 定义特征列顺序（确保训练和预测时一致）
-        feature_columns = ['p-aminophenol(g)', 'Acetic Anhydride(ml)', 'PA:AA', 'Reaction time(min)', 'T(°C)']
+        X = df[['p-aminophenol(g)', 'Acetic Anhydride(ml)', 'PA:AA', 'Reaction time(min)', 'T(°C)']]
+        y_crude = df['Crude weight(g)']
+        y_purify = df['Purify weight(g)']
+        y_yield = df['Yield(%)']
         
-        X = df[feature_columns]
-        y = df['Yield(%)']
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+        # Random Forest models
+        model_crude = RandomForestRegressor(n_estimators=100, random_state=42)
+        model_purify = RandomForestRegressor(n_estimators=100, random_state=42)
+        model_yield = RandomForestRegressor(n_estimators=100, random_state=42)
         
-        model = RandomForestRegressor(n_estimators=100, random_state=42)
-        model.fit(X_train, y_train)
-        y_pred = model.predict(X_test)
+        # Train models
+        X_train, X_test, yc_train, yc_test = train_test_split(X, y_crude, test_size=0.2)
+        model_crude.fit(X_train, yc_train)
         
-        # 显示模型性能
-        with st.expander("📈 Model Performance"):
-            col1, col2 = st.columns(2)
+        X_train, X_test, yp_train, yp_test = train_test_split(X, y_purify, test_size=0.2)
+        model_purify.fit(X_train, yp_train)
+        
+        X_train, X_test, yy_train, yy_test = train_test_split(X, y_yield, test_size=0.2)
+        model_yield.fit(X_train, yy_train)
+        
+        # Model evaluation
+        with st.expander("📈 Model Performance", expanded=False):
+            yc_pred = model_crude.predict(X_test)
+            yp_pred = model_purify.predict(X_test)
+            yy_pred = model_yield.predict(X_test)
+            
+            col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("MAE", f"{mean_absolute_error(y_test, y_pred):.2f}%")
+                st.metric("Crude Model MAE", f"{mean_absolute_error(yc_test, yc_pred):.3f} g")
+                st.metric("Crude Model R²", f"{r2_score(yc_test, yc_pred):.3f}")
             with col2:
-                st.metric("R² Score", f"{r2_score(y_test, y_pred):.3f}")
+                st.metric("Purified Model MAE", f"{mean_absolute_error(yp_test, yp_pred):.3f} g")
+                st.metric("Purified Model R²", f"{r2_score(yp_test, yp_pred):.3f}")
+            with col3:
+                st.metric("Yield Model MAE", f"{mean_absolute_error(yy_test, yy_pred):.3f}%")
+                st.metric("Yield Model R²", f"{r2_score(yy_test, yy_pred):.3f}")
+            
+            st.info("MAE (Mean Absolute Error) - lower is better, R² (R-squared) - closer to 1 is better")
         
-        # 预测接口
-        with st.form("prediction_form"):
-            st.subheader("输入预测参数")
-            p_amino = st.number_input(REQUIRED_COLS['p-aminophenol(g)'], min_value=0.1, max_value=50.0, value=5.0)
-            acetic = st.number_input(REQUIRED_COLS['Acetic Anhydride(ml)'], min_value=0.1, max_value=100.0, value=10.0)
-            time = st.number_input(REQUIRED_COLS['Reaction time(min)'], min_value=1, max_value=300, value=30)
-            temp = st.number_input(REQUIRED_COLS['T(°C)'], min_value=0.0, max_value=200.0, value=80.0)
-            
-            # 计算PA:AA比值
-            pa_aa_ratio = p_amino / acetic if acetic != 0 else 0.0
-            
-            if st.form_submit_button("🔮 Run Prediction"):
-                # 按照训练时的特征顺序创建输入数据
-                input_data = pd.DataFrame([[p_amino, acetic, pa_aa_ratio, time, temp]], 
-                                        columns=feature_columns)
-                
-                prediction = model.predict(input_data)[0]
-                st.success(f"预测产量: {prediction:.1f}%")
-                
     except Exception as e:
-        st.error(f"建模失败: {str(e)}")
+        st.error(f"Model training error: {str(e)}")
+        st.info("Please check data format and missing values")
+        return
+    
+    # Prediction interface
+    st.subheader("Yield Prediction")
+    with st.expander("📝 Prediction Guide", expanded=True):
+        st.markdown(f"""
+        ### Instructions:
+        1. Enter reactant parameters and conditions (must be within your experimental data ranges)
+        2. Click "Run Prediction"
+        3. View predicted results
+        
+        ### Parameter Ranges (from your data):
+        - p-aminophenol: {data_ranges['p-aminophenol(g)']['min']:.1f}-{data_ranges['p-aminophenol(g)']['max']:.1f} g
+        - Acetic Anhydride: {data_ranges['Acetic Anhydride(ml)']['min']:.1f}-{data_ranges['Acetic Anhydride(ml)']['max']:.1f} ml
+        - PA:AA ratio: {data_ranges['PA:AA']['min']:.2f}-{data_ranges['PA:AA']['max']:.2f}
+        - Reaction time: {data_ranges['Reaction time(min)']['min']:.0f}-{data_ranges['Reaction time(min)']['max']:.0f} min
+        - Temperature: {data_ranges['T(°C)']['min']:.1f}-{data_ranges['T(°C)']['max']:.1f} ℃
+        
+        Predictions are only reliable within these ranges.
+        """)
+    
+    with st.form("prediction_form"):
+        cols = st.columns(2)
+        input_data = {}
+        
+        with cols[0]:
+            st.markdown("#### Reactant Parameters")
+            input_data['p-aminophenol(g)'] = st.number_input(
+                REQUIRED_COLS['p-aminophenol(g)'], 
+                min_value=float(data_ranges['p-aminophenol(g)']['min']),
+                max_value=float(data_ranges['p-aminophenol(g)']['max']),
+                value=float((data_ranges['p-aminophenol(g)']['min'] + data_ranges['p-aminophenol(g)']['max']) / 2),
+                step=0.1, 
+                format="%.1f", key="pred_p_amino"
+            )
+            input_data['Acetic Anhydride(ml)'] = st.number_input(
+                REQUIRED_COLS['Acetic Anhydride(ml)'], 
+                min_value=float(data_ranges['Acetic Anhydride(ml)']['min']),
+                max_value=float(data_ranges['Acetic Anhydride(ml)']['max']),
+                value=float((data_ranges['Acetic Anhydride(ml)']['min'] + data_ranges['Acetic Anhydride(ml)']['max']) / 2),
+                step=0.1,
+                format="%.1f", key="pred_acetic"
+            )
+            # Calculate and show PA:AA
+            if input_data['Acetic Anhydride(ml)'] != 0:
+                pa_aa = input_data['p-aminophenol(g)'] / input_data['Acetic Anhydride(ml)']
+                st.metric("PA:AA Ratio", f"{pa_aa:.3f}")
+                input_data['PA:AA'] = pa_aa
+                # Validate PA:AA ratio
+                if not (data_ranges['PA:AA']['min'] <= pa_aa <= data_ranges['PA:AA']['max']):
+                    st.error(f"PA:AA ratio must be between {data_ranges['PA:AA']['min']:.2f} and {data_ranges['PA:AA']['max']:.2f}")
+            else:
+                st.warning("Acetic Anhydride volume cannot be 0")
+        
+        with cols[1]:
+            st.markdown("#### Reaction Conditions")
+            input_data['Reaction time(min)'] = st.number_input(
+                REQUIRED_COLS['Reaction time(min)'], 
+                min_value=int(data_ranges['Reaction time(min)']['min']),
+                max_value=int(data_ranges['Reaction time(min)']['max']),
+                value=int((data_ranges['Reaction time(min)']['min'] + data_ranges['Reaction time(min)']['max']) / 2),
+                step=1,
+                key="pred_time"
+            )
+            input_data['T(°C)'] = st.number_input(
+                REQUIRED_COLS['T(°C)'], 
+                min_value=float(data_ranges['T(°C)']['min']),
+                max_value=float(data_ranges['T(°C)']['max']),
+                value=float((data_ranges['T(°C)']['min'] + data_ranges['T(°C)']['max']) / 2),
+                step=0.5,
+                format="%.1f", key="pred_temp"
+            )
+        
+        if st.form_submit_button("🔮 Run Prediction", type="primary"):
+            try:
+                # Validate all inputs are within data ranges
+                valid = True
+                for param in ['p-aminophenol(g)', 'Acetic Anhydride(ml)', 'Reaction time(min)', 'T(°C)']:
+                    value = input_data[param]
+                    if not (data_ranges[param]['min'] <= value <= data_ranges[param]['max']):
+                        st.error(f"{REQUIRED_COLS[param]} must be between {data_ranges[param]['min']} and {data_ranges[param]['max']}")
+                        valid = False
+                
+                # Validate PA:AA ratio
+                pa_aa = input_data['p-aminophenol(g)'] / input_data['Acetic Anhydride(ml)']
+                if not (data_ranges['PA:AA']['min'] <= pa_aa <= data_ranges['PA:AA']['max']):
+                    st.error(f"PA:AA ratio must be between {data_ranges['PA:AA']['min']:.2f} and {data_ranges['PA:AA']['max']:.2f}")
+                    valid = False
+                
+                if not valid:
+                    st.error("超过预测范围，不能预测 (Exceeds prediction range, cannot predict)")
+                    return
+                
+                # Prepare input
+                X_input = pd.DataFrame([input_data])[['p-aminophenol(g)', 'Acetic Anhydride(ml)', 'PA:AA', 'Reaction time(min)', 'T(°C)']]
+                
+                # Predict
+                crude_pred = model_crude.predict(X_input)[0]
+                purify_pred = model_purify.predict(X_input)[0]
+                yield_pred = model_yield.predict(X_input)[0]
+                
+                # Calculate theoretical yield
+                molar_ratio = 151.16 / 109.13  # Molecular weight ratio
+                theo_yield = input_data['p-aminophenol(g)'] * molar_ratio
+                
+                # Display results
+                st.success("### Prediction Results")
+                
+                res_cols = st.columns(3)
+                with res_cols[0]:
+                    st.metric("Crude Product", f"{crude_pred:.2f} g")
+                with res_cols[1]:
+                    st.metric("Purified Product", f"{purify_pred:.2f} g")
+                with res_cols[2]:
+                    st.metric("Predicted Yield", f"{yield_pred:.1f}%")
+                
+                # Detailed info
+                with st.expander("📊 Details", expanded=False):
+                    st.markdown(f"""
+                    **Theoretical Calculation**:
+                    - Theoretical yield: {theo_yield:.2f} g (stoichiometric)
+                    - Actual/Theoretical ratio: {purify_pred/theo_yield:.2%}
+                    
+                    **Model Info**:
+                    - Random Forest Regression
+                    - Trained on {len(df)} experiments
+                    - Last updated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}
+                    """)
+                
+            except Exception as e:
+                st.error(f"Prediction error: {str(e)}")
 
 # ================ Main App ================
 def main():
