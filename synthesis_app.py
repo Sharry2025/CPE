@@ -70,7 +70,19 @@ def save_data(df):
     except Exception as e:
         st.error(f"保存失败: {str(e)}")
         return False
-
+def get_data_ranges(df):
+    """Get min and max values for each parameter from existing data"""
+    ranges = {}
+    for col in ['p-aminophenol(g)', 'Acetic Anhydride(ml)', 'PA:AA', 'Reaction time(min)', 'T(°C)']:
+        if col in df.columns:
+            col_data = df[col].dropna()
+            if len(col_data) > 0:
+                ranges[col] = {
+                    'min': float(col_data.min()),
+                    'max': float(col_data.max())
+                }
+    return ranges
+    
 def create_download_link(df):
     """生成Excel下载链接"""
     output = BytesIO()
